@@ -1,0 +1,9 @@
+version: 1
+rules:
+  - id: ports-no-adapters
+    description: Объявление интерфейса не вызывает реализацию.
+    from:
+      paths: ["src/port.ts"]
+    to:
+      paths: ["src/adapter.ts"]
+    edges: [calls]

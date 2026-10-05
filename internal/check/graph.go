@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -44,14 +45,15 @@ type RuleResult struct {
 	Findings  int    `json:"findings"`
 }
 type Coverage struct {
-	Files                int    `json:"files"`
-	Nodes                int    `json:"nodes"`
-	Edges                int    `json:"edges"`
-	UnresolvedReferences int    `json:"unresolved_references"`
-	ParseErrorFiles      int    `json:"parse_error_files"`
-	CodeGraphVersion     string `json:"codegraph_version"`
-	SchemaVersion        int    `json:"schema_version"`
-	Synced               bool   `json:"synced"`
+	Files                 int    `json:"files"`
+	Nodes                 int    `json:"nodes"`
+	Edges                 int    `json:"edges"`
+	ExcludedDispatchEdges int    `json:"excluded_dispatch_edges"`
+	UnresolvedReferences  int    `json:"unresolved_references"`
+	ParseErrorFiles       int    `json:"parse_error_files"`
+	CodeGraphVersion      string `json:"codegraph_version"`
+	SchemaVersion         int    `json:"schema_version"`
+	Synced                bool   `json:"synced"`
 }
 type Report struct {
 	Status   string       `json:"status"`
@@ -151,19 +153,26 @@ func Scan(ctx context.Context, project, database string, config Config, synced, 
 			r.Errors = append(r.Errors, fmt.Sprintf("%s: селектор не нашёл символов (from=%d, to=%d); проверьте пути и индекс", rule.ID, len(fromSets[i]), len(toSets[i])))
 		}
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT source,target,kind,coalesce(line,0),coalesce(provenance,'') FROM edges ORDER BY source,target,kind,line")
+	rows, err := tx.QueryContext(ctx, "SELECT source,target,kind,coalesce(line,0),coalesce(provenance,''),coalesce(metadata,'{}') FROM edges ORDER BY source,target,kind,line")
 	if err != nil {
 		return r, err
 	}
 	seen := map[string]bool{}
 	for rows.Next() {
-		var source, target, kind, provenance string
+		var source, target, kind, provenance, metadata string
 		var line int
-		if err = rows.Scan(&source, &target, &kind, &line, &provenance); err != nil {
+		if err = rows.Scan(&source, &target, &kind, &line, &provenance, &metadata); err != nil {
 			rows.Close()
 			return r, err
 		}
 		r.Coverage.Edges++
+		var attributes struct {
+			SynthesizedBy string `json:"synthesizedBy"`
+		}
+		if err = json.Unmarshal([]byte(metadata), &attributes); err != nil {
+			rows.Close()
+			return r, fmt.Errorf("повреждены metadata связи: %w", err)
+		}
 		from, ok := nodes[source]
 		if !ok {
 			rows.Close()
@@ -173,6 +182,12 @@ func Scan(ctx context.Context, project, database string, config Config, synced, 
 		if !ok {
 			rows.Close()
 			return r, fmt.Errorf("нарушена целостность графа: неизвестный target %q", target)
+		}
+		// These are resolver dispatch bridges, not source-level dependencies. An
+		// interface declaration does not call its concrete implementations.
+		if kind == "calls" && attributes.SynthesizedBy == "interface-impl" {
+			r.Coverage.ExcludedDispatchEdges++
+			continue
 		}
 		for i, rule := range config.Rules {
 			if !fromSets[i][source] || !toSets[i][target] || !exactAny(rule.Edges, kind) {

@@ -28,10 +28,10 @@ func fixture(t *testing.T) (string, string, *sql.DB) {
  CREATE TABLE project_metadata(key TEXT PRIMARY KEY,value TEXT); INSERT INTO project_metadata VALUES('index_state','complete'),('indexed_with_version','1.6.2');
  CREATE TABLE files(path TEXT PRIMARY KEY,content_hash TEXT,errors TEXT);
  CREATE TABLE nodes(id TEXT PRIMARY KEY,name TEXT,qualified_name TEXT,kind TEXT,language TEXT,file_path TEXT,start_line INTEGER);
- CREATE TABLE edges(source TEXT,target TEXT,kind TEXT,line INTEGER,provenance TEXT);
+ CREATE TABLE edges(source TEXT,target TEXT,kind TEXT,line INTEGER,provenance TEXT,metadata TEXT);
  CREATE TABLE unresolved_refs(id INTEGER);
  INSERT INTO nodes VALUES('a','submit','src/ui/orders.js::submit','function','javascript','src/ui/orders.js',1),('b','store','src/domain/store.js::store','function','javascript','src/domain/store.js',1);
- INSERT INTO edges VALUES('a','b','calls',3,NULL),('a','b','calls',3,NULL);`
+ INSERT INTO edges VALUES('a','b','calls',3,NULL,NULL),('a','b','calls',3,NULL,NULL);`
 	if _, err = db.Exec(schema); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,9 @@ func TestBlockedInputs(t *testing.T) {
 		{"in-progress", "UPDATE project_metadata SET value='building' WHERE key='index_state'", "не завершён"},
 		{"version", "UPDATE project_metadata SET value='9.0' WHERE key='indexed_with_version'", "несовместимый"},
 		{"schema", "UPDATE schema_versions SET version=12", "несовместимый"},
-		{"dangling", "INSERT INTO edges VALUES('missing','b','calls',1,NULL)", "целостность"},
+		{"dangling", "INSERT INTO edges VALUES('missing','b','calls',1,NULL,NULL)", "целостность"},
+		{"dangling-dispatch", `INSERT INTO edges VALUES('missing','b','calls',1,NULL,'{"synthesizedBy":"interface-impl"}')`, "целостность"},
+		{"invalid-edge-metadata", `UPDATE edges SET metadata='{'`, "metadata"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, path, db := fixture(t)
@@ -198,5 +200,22 @@ func TestSelectorFields(t *testing.T) {
 	s.Languages = []string{"javascript"}
 	if s.Match(n) {
 		t.Fatal("ignored language restriction")
+	}
+}
+
+func TestDispatchBridgesAreNotDirectCalls(t *testing.T) {
+	root, path, db := fixture(t)
+	_, err := db.Exec(`DELETE FROM edges;
+ INSERT INTO edges VALUES('a','b','calls',1,'heuristic','{"synthesizedBy":"interface-impl"}');
+ INSERT INTO edges VALUES('a','b','calls',3,'heuristic','{"resolvedBy":"framework"}');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Scan(context.Background(), root, path, config(t), true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Findings) != 1 || r.Findings[0].Line != 3 || r.Coverage.ExcludedDispatchEdges != 1 || r.Coverage.Edges != 2 {
+		t.Fatalf("%+v", r)
 	}
 }

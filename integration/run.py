@@ -55,3 +55,16 @@ with tempfile.TemporaryDirectory(prefix="archcheck integration ") as temp:
         empty = json.loads(command(scan, 2))
         assert empty["status"] == "blocked" and any("селектор" in e for e in empty["errors"]), empty
         print(f"{language}: real graph, violations, repair, stale index, coverage, and exit codes OK")
+
+    project = work / "typescript"
+    shutil.copytree(ROOT / "integration/fixtures/typescript", project)
+    command([CODEGRAPH, "init", "--yes", project])
+    scan = [binary, "scan", "--project", project, "--format", "json", "--codegraph", CODEGRAPH]
+    report = json.loads(command(scan, 0))
+    assert report["status"] == "no_observed_violations" and not report["findings"], report
+    assert report["coverage"]["excluded_dispatch_edges"] > 0, report
+    config = project / "archcheck.yaml"
+    config.write_text(config.read_text().replace('src/port.ts', 'TEMP').replace('src/adapter.ts', 'src/port.ts').replace('TEMP', 'src/adapter.ts').replace('[calls]', '[implements]'))
+    actual_dependency = json.loads(command(scan, 1))
+    assert any(f["edge"] == "implements" for f in actual_dependency["findings"]), actual_dependency
+    print("typescript: real interface dispatch bridges excluded, source implements dependency retained OK")
