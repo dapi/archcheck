@@ -1,0 +1,5 @@
+{
+  "name": "archcheck-integration",
+  "private": true,
+  "devDependencies": {"@colbymchenry/codegraph": "1.6.2"}
+}

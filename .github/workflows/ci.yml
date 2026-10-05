@@ -1,0 +1,27 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      DO_NOT_TRACK: '1'
+      CODEGRAPH_TELEMETRY: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -o bin/archcheck ./cmd/archcheck
+      - run: npm ci --prefix integration --no-audit --no-fund
+      - run: python3 integration/run.py
+      - run: git diff --check

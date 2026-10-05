@@ -1,0 +1,9 @@
+version: 1
+rules:
+  - id: controller-no-gateway
+    description: Контроллер не должен вызывать платёжный шлюз напрямую.
+    from:
+      paths: ["app/controllers/**"]
+    to:
+      paths: ["app/clients/**"]
+    edges: [calls]

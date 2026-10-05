@@ -1,0 +1,9 @@
+version: 1
+rules:
+  - id: ui-no-domain
+    description: UI должен обращаться к домену через прикладной слой.
+    from:
+      paths: ["src/ui/**"]
+    to:
+      paths: ["src/domain/**"]
+    edges: [calls, imports]
