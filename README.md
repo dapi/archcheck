@@ -159,5 +159,7 @@ python3 scripts/verify-project.py /path/to/project \
 
 Источники: [docs/sources.md](docs/sources.md).
 
+Виды правил, возможности текущей версии и тестовые кейсы: [docs/rule-catalog.md](docs/rule-catalog.md).
+
 Устройство: [docs/architecture.md](docs/architecture.md). Очередь: [ROADMAP.md](ROADMAP.md).
 Лицензия: MIT. CodeGraph — отдельная зависимость, его исходники и бинарники здесь не включены.
